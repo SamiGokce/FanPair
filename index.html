@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="description" content="Get matched with another football fan instantly. Live match chat, no account needed.">
+  <script>(function(){const t=localStorage.getItem('fp_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
 <body>
 
@@ -14,6 +15,7 @@
   <header class="header">
     <span class="logo">⚽ Fan<span class="accent">Pair</span></span>
     <span id="sync-badge" class="hidden" style="font-size:11px;color:var(--green);margin-left:auto;">● LIVE</span>
+    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" style="margin-left:8px;">☀️</button>
   </header>
 
   <section class="hero">
@@ -293,6 +295,20 @@
   }
 
   if (db) loadMatches();
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('fp_theme', next);
+    document.getElementById('theme-btn').textContent = next === 'light' ? '🌙' : '☀️';
+  }
+
+  (function() {
+    const t = localStorage.getItem('fp_theme');
+    const btn = document.getElementById('theme-btn');
+    if (t === 'light') btn.textContent = '🌙';
+  })();
 </script>
 
 </body>

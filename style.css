@@ -26,6 +26,55 @@
   --radius-pill:  100px;
 }
 
+[data-theme="light"] {
+  --bg:           #f4f4f5;
+  --surface:      #ffffff;
+  --surface-2:    #ececed;
+  --surface-3:    #e0e0e2;
+  --green:        #16a34a;
+  --green-dim:    rgba(22, 163, 74, 0.1);
+  --green-glow:   rgba(22, 163, 74, 0.18);
+  --text:         #111827;
+  --text-dim:     #4b5563;
+  --muted:        #9ca3af;
+  --border:       rgba(0, 0, 0, 0.08);
+  --border-hi:    rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .match-card.live-card {
+  background: linear-gradient(140deg, #ffffff, #f0fdf4);
+}
+
+[data-theme="light"] .badge.finished {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .end-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="light"] .mine .bubble {
+  color: #fff;
+}
+
+/* ─── Theme toggle button ───────────────────────────── */
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 10px;
+  font-family: inherit;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.theme-toggle:hover { color: var(--text); border-color: var(--muted); }
+
 html, body {
   min-height: 100%;
   background: var(--bg);
