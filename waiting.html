@@ -189,25 +189,30 @@
     pollTimer = setInterval(poll, 2500);
   }
 
+  function dbg(msg) {
+    console.log('[FP]', msg);
+    document.getElementById('queue-note').textContent = msg;
+  }
+
   async function poll() {
     if (!inQueue) return;
 
-    // 1. Have we already been paired? (another client called pair_users on us)
-    const { data: existingRoom } = await db.from('rooms')
+    // 1. Have we already been paired? (check for any non-expired room)
+    const { data: existingRoom, error: roomErr } = await db.from('rooms')
       .select('id')
       .or(`session_a.eq.${sessionId},session_b.eq.${sessionId}`)
-      .gte('created_at', joinedAt)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    if (existingRoom) {
-      go(existingRoom.id);
-      return;
-    }
+    if (roomErr) { dbg('Room check error: ' + roomErr.message); return; }
+    if (existingRoom) { go(existingRoom.id); return; }
 
-    // 2. Look for another unpaired user in the same queue (joined in last 10 min)
+    // 2. Look for another unpaired user in the same match queue
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-    const { data: others } = await db.from('queue')
+    const { data: others, error: qErr } = await db.from('queue')
       .select('session_id')
       .eq('match_id', matchId)
       .eq('paired', false)
@@ -215,29 +220,33 @@
       .gte('created_at', tenMinAgo)
       .limit(10);
 
+    if (qErr) { dbg('Queue read error: ' + qErr.message); return; }
+
     if (!others || others.length === 0) {
-      document.getElementById('queue-note').textContent = 'Waiting for another fan...';
+      dbg('Waiting for another fan...');
       return;
     }
 
-    document.getElementById('queue-note').textContent =
-      `${others.length + 1} fan${others.length > 0 ? 's' : ''} in queue`;
+    dbg(`${others.length + 1} fans in queue — pairing...`);
 
     // Only the client with the lexicographically LOWER session_id initiates pairing.
-    // This prevents both sides calling pair_users simultaneously.
     const myTarget = others.find(o => sessionId < o.session_id);
-    if (!myTarget) return; // We're the follower — wait to be paired
+    if (!myTarget) {
+      dbg(`${others.length + 1} fans in queue — waiting for initiator...`);
+      return;
+    }
 
     // 3. Attempt atomic pairing
-    const { data: roomId, error } = await db.rpc('pair_users', {
+    const { data: roomId, error: pairErr } = await db.rpc('pair_users', {
       my_session:    sessionId,
       their_session: myTarget.session_id,
       p_match_id:    matchId,
     });
 
-    if (roomId && !error) {
-      go(roomId);
-    }
+    if (pairErr) { dbg('Pair error: ' + pairErr.message); return; }
+    if (!roomId)  { dbg('Pair returned null — retrying...'); return; }
+
+    go(roomId);
   }
 
   function go(roomId) {
