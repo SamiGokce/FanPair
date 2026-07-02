@@ -7,26 +7,6 @@
 }
 
 :root {
-  --bg:           #0a0a0a;
-  --surface:      #141414;
-  --surface-2:    #1c1c1c;
-  --surface-3:    #252525;
-  --green:        #22c55e;
-  --green-dim:    rgba(34, 197, 94, 0.12);
-  --green-glow:   rgba(34, 197, 94, 0.2);
-  --red:          #ef4444;
-  --yellow:       #f59e0b;
-  --text:         #f0f0f0;
-  --text-dim:     #9ca3af;
-  --muted:        #4b5563;
-  --border:       rgba(255, 255, 255, 0.07);
-  --border-hi:    rgba(255, 255, 255, 0.14);
-  --radius:       14px;
-  --radius-sm:    9px;
-  --radius-pill:  100px;
-}
-
-[data-theme="light"] {
   --bg:           #f4f4f5;
   --surface:      #ffffff;
   --surface-2:    #ececed;
@@ -34,29 +14,63 @@
   --green:        #16a34a;
   --green-dim:    rgba(22, 163, 74, 0.1);
   --green-glow:   rgba(22, 163, 74, 0.18);
+  --red:          #ef4444;
+  --yellow:       #d97706;
   --text:         #111827;
   --text-dim:     #4b5563;
   --muted:        #9ca3af;
   --border:       rgba(0, 0, 0, 0.08);
   --border-hi:    rgba(0, 0, 0, 0.15);
+  --radius:       14px;
+  --radius-sm:    9px;
+  --radius-pill:  100px;
 }
 
-[data-theme="light"] .match-card.live-card {
+.match-card.live-card {
   background: linear-gradient(140deg, #ffffff, #f0fdf4);
 }
 
-[data-theme="light"] .badge.finished {
+.badge.finished {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.1);
 }
 
-[data-theme="light"] .end-overlay {
+.end-overlay {
   background: rgba(0, 0, 0, 0.5);
 }
 
-[data-theme="light"] .mine .bubble {
-  color: #fff;
+.mine .bubble { color: #fff; }
+
+[data-theme="dark"] {
+  --bg:           #0a0a0a;
+  --surface:      #141414;
+  --surface-2:    #1c1c1c;
+  --surface-3:    #252525;
+  --green:        #22c55e;
+  --green-dim:    rgba(34, 197, 94, 0.12);
+  --green-glow:   rgba(34, 197, 94, 0.2);
+  --yellow:       #f59e0b;
+  --text:         #f0f0f0;
+  --text-dim:     #9ca3af;
+  --muted:        #4b5563;
+  --border:       rgba(255, 255, 255, 0.07);
+  --border-hi:    rgba(255, 255, 255, 0.14);
 }
+
+[data-theme="dark"] .match-card.live-card {
+  background: linear-gradient(140deg, #141414, #121a14);
+}
+
+[data-theme="dark"] .badge.finished {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="dark"] .end-overlay {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+[data-theme="dark"] .mine .bubble { color: #000; }
 
 /* ─── Theme toggle button ───────────────────────────── */
 

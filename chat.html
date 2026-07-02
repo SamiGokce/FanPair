@@ -6,7 +6,7 @@
   <title>Chat — FanPair</title>
   <link rel="stylesheet" href="style.css">
   <meta name="theme-color" content="#141414">
-  <script>(function(){const t=localStorage.getItem('fp_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script>(function(){const t=localStorage.getItem('fp_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();</script>
 </head>
 <body>
 
@@ -18,7 +18,7 @@
       <div class="chat-match-name">Connecting...</div>
     </div>
     <span id="match-badge" class="badge live">Live</span>
-    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()">☀️</button>
+    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()">🌙</button>
     <button class="btn btn-ghost btn-sm" onclick="confirmLeave()" style="margin-left:4px;font-size:12px;opacity:0.7;">Leave</button>
   </div>
 
@@ -369,16 +369,17 @@
   }
 
   function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('fp_theme', next);
-    document.getElementById('theme-btn').textContent = next === 'light' ? '🌙' : '☀️';
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const next = isDark ? null : 'dark';
+    if (next) document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('fp_theme', next || 'light');
+    document.getElementById('theme-btn').textContent = next ? '☀️' : '🌙';
   }
 
   (function() {
-    if (localStorage.getItem('fp_theme') === 'light')
-      document.getElementById('theme-btn').textContent = '🌙';
+    if (localStorage.getItem('fp_theme') === 'dark')
+      document.getElementById('theme-btn').textContent = '☀️';
   })();
 
   // ─── Load room + history ─────────────────────────────

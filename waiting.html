@@ -6,7 +6,7 @@
   <title>Finding a fan... — FanPair</title>
   <link rel="stylesheet" href="style.css">
   <meta name="theme-color" content="#0a0a0a">
-  <script>(function(){const t=localStorage.getItem('fp_theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script>(function(){const t=localStorage.getItem('fp_theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();</script>
 </head>
 <body>
 
@@ -14,7 +14,7 @@
   <header class="header">
     <button class="btn btn-ghost btn-sm" onclick="leaveQueue()" style="padding-left: 0;">← Back</button>
     <span class="logo" style="margin-left: auto;">⚽ Fan<span class="accent">Pair</span></span>
-    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" style="margin-left:8px;">☀️</button>
+    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" style="margin-left:8px;">🌙</button>
   </header>
 
   <!-- Compact match banner -->
@@ -324,16 +324,17 @@
   loadMatch().then(() => enterQueue());
 
   function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('fp_theme', next);
-    document.getElementById('theme-btn').textContent = next === 'light' ? '🌙' : '☀️';
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const next = isDark ? null : 'dark';
+    if (next) document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('fp_theme', next || 'light');
+    document.getElementById('theme-btn').textContent = next ? '☀️' : '🌙';
   }
 
   (function() {
-    if (localStorage.getItem('fp_theme') === 'light')
-      document.getElementById('theme-btn').textContent = '🌙';
+    if (localStorage.getItem('fp_theme') === 'dark')
+      document.getElementById('theme-btn').textContent = '☀️';
   })();
 </script>
 
