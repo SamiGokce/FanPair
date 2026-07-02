@@ -280,8 +280,6 @@
     sendBtn.disabled = true;
     endOverlay.classList.add('show');
     showEndState('end-ask');
-    // Subscribe to room changes so we know if the other fan votes
-    subscribeRoomExtend();
   }
 
   function showEndState(id) {
@@ -292,41 +290,16 @@
 
   async function voteExtend() {
     showEndState('end-waiting');
-
-    // Record our vote (session_a or session_b)
     const col = sessionId === room.session_a ? 'extend_vote_a' : 'extend_vote_b';
     await db.from('rooms').update({ [col]: true }).eq('id', roomId);
+    checkExtendImmediate();
   }
 
-  function subscribeRoomExtend() {
-    roomChannel = db.channel(`room-extend-${roomId}`)
-      .on('postgres_changes', {
-        event:  'UPDATE',
-        schema: 'public',
-        table:  'rooms',
-        filter: `id=eq.${roomId}`,
-      }, payload => {
-        const r = payload.new;
-        if (r.extend_vote_a && r.extend_vote_b) {
-          handleExtended(r.expires_at);
-        } else if (r.extend_vote_a || r.extend_vote_b) {
-          // One fan voted — if that's not us, show them they're waiting
-          const myCol  = sessionId === room.session_a ? 'extend_vote_a' : 'extend_vote_b';
-          const myVote = r[myCol];
-          if (!myVote) {
-            // We haven't voted but other fan has — hint in sub-label
-            document.getElementById('end-wait-label').textContent =
-              'The other fan wants to continue. Do you?';
-          }
-        }
-      })
-      .subscribe();
-
-    // Also check current state immediately (race: both may have voted already)
+  function checkExtendImmediate() {
+    // Race: both may have voted before subscription fired
     db.from('rooms').select('extend_vote_a,extend_vote_b,expires_at').eq('id', roomId).single()
       .then(({ data }) => {
-        if (!data) return;
-        if (data.extend_vote_a && data.extend_vote_b) handleExtended(data.expires_at);
+        if (data?.extend_vote_a && data?.extend_vote_b) handleExtended(data.expires_at);
       });
   }
 
@@ -354,7 +327,6 @@
       twoMinWarned = false;
       addSystemMsg('🔥 Extended! 22 more minutes.');
       startTimer(room.created_at, newExpiry);
-      if (roomChannel) db.removeChannel(roomChannel);
     }, 2500);
   }
 
@@ -362,8 +334,9 @@
     window.location.href = 'waiting.html';
   }
 
-  function confirmLeave() {
+  async function confirmLeave() {
     if (confirm('Leave this chat?')) {
+      await db.from('rooms').update({ left_session: sessionId }).eq('id', roomId);
       window.location.href = 'index.html';
     }
   }
@@ -443,13 +416,34 @@
 
     showTheirName(r[theirCol]);
 
-    if (!r[theirCol]) {
-      const nameSub = db.channel(`room-name-${roomId}`)
-        .on('postgres_changes', {
-          event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}`
-        }, p => { showTheirName(p.new[theirCol]); db.removeChannel(nameSub); })
-        .subscribe();
-    }
+    const theirSession = sessionId === r.session_a ? r.session_b : r.session_a;
+
+    // Persistent room subscription: name reveal + left detection + extend votes
+    roomChannel = db.channel(`room-meta-${roomId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}`
+      }, p => {
+        const updated = p.new;
+        showTheirName(updated[theirCol]);
+        // Other fan left
+        if (updated.left_session === theirSession && !chatEnded) {
+          chatEnded = true;
+          inputEl.disabled = true;
+          sendBtn.disabled = true;
+          addSystemMsg('The other fan left the chat.');
+        }
+        // Extend votes
+        if (updated.extend_vote_a && updated.extend_vote_b) {
+          handleExtended(updated.expires_at);
+        } else if (updated.extend_vote_a || updated.extend_vote_b) {
+          const myCol2  = sessionId === room.session_a ? 'extend_vote_a' : 'extend_vote_b';
+          if (!updated[myCol2]) {
+            document.getElementById('end-wait-label').textContent =
+              'The other fan wants to continue. Do you?';
+          }
+        }
+      })
+      .subscribe();
 
     // Start countdown
     startTimer(r.created_at, r.expires_at);
@@ -477,12 +471,23 @@
         table:  'messages',
         filter: `room_id=eq.${roomId}`,
       }, payload => {
-        // Deduplicate: skip messages we already rendered from history
         const existing = messagesEl.querySelector(`[data-id="${payload.new.id}"]`);
         if (existing) return;
         addMessage(payload.new);
       })
       .subscribe();
+
+    // Mark ourselves as left when closing the tab
+    window.addEventListener('pagehide', () => {
+      const url = `${SUPABASE_URL}/rest/v1/rooms?id=eq.${roomId}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('PATCH', url, false);
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON_KEY}`);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Prefer', 'return=minimal');
+      try { xhr.send(JSON.stringify({ left_session: sessionId })); } catch {}
+    });
   }
 
   init();

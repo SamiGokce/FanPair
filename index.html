@@ -216,7 +216,7 @@
   }
 
   async function loadFanCounts(matches) {
-    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const fiveMinAgo = new Date(Date.now() - 90 * 1000).toISOString();
     for (const m of matches) {
       const el = document.getElementById(`count-${m.id}`);
       if (!el) continue;
