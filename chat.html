@@ -17,6 +17,7 @@
       <div class="chat-match-name">Connecting...</div>
     </div>
     <span id="match-badge" class="badge live">Live</span>
+    <button class="btn btn-ghost btn-sm" onclick="confirmLeave()" style="margin-left:8px;font-size:12px;opacity:0.7;">Leave</button>
   </div>
 
   <!-- Timer bar -->
@@ -357,6 +358,12 @@
 
   function findNewFan() {
     window.location.href = 'waiting.html';
+  }
+
+  function confirmLeave() {
+    if (confirm('Leave this chat?')) {
+      window.location.href = 'index.html';
+    }
   }
 
   // ─── Load room + history ─────────────────────────────
