@@ -228,7 +228,7 @@
           .gte('created_at', fiveMinAgo);
         el.innerHTML = count > 0
           ? `<strong>${count}</strong> fan${count === 1 ? '' : 's'} waiting`
-          : 'Be the first';
+          : 'no one here yet — share the link!';
       } catch { el.innerHTML = ''; }
     }
   }
