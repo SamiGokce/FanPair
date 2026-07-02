@@ -131,17 +131,15 @@
   // ─── Queue management ────────────────────────────────
 
   async function enterQueue() {
-    joinedAt = new Date().toISOString();
-
     // Clear any stale entry for this session
     await db.from('queue').delete().eq('session_id', sessionId);
 
-    const { error } = await db.from('queue').insert({
+    const { data: inserted, error } = await db.from('queue').insert({
       session_id: sessionId,
       match_id:   matchId,
       preference,
       paired:     false,
-    });
+    }).select('created_at').single();
 
     if (error) {
       console.error('Queue join failed:', error);
@@ -149,6 +147,8 @@
       return;
     }
 
+    // Use the DB server timestamp to avoid clock-skew issues between devices
+    joinedAt = inserted.created_at;
     inQueue = true;
     startDots();
     startPolling();
