@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FanPair — Talk to fans live</title>
+  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="description" content="Get matched with another football fan instantly. Live match chat, no account needed.">
+</head>
+<body>
+
+<div class="page">
+  <header class="header">
+    <span class="logo">⚽ Fan<span class="accent">Pair</span></span>
+    <span id="sync-badge" class="hidden" style="font-size:11px;color:var(--green);margin-left:auto;">● LIVE</span>
+  </header>
+
+  <section class="hero">
+    <h1>Talk to a fan.<br><span class="accent">Right now.</span></h1>
+    <p>Get matched with another person instantly. No profile needed.</p>
+  </section>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" id="tab-live" onclick="switchTab('live')">Live & Upcoming</button>
+    <button class="tab" id="tab-results" onclick="switchTab('results')">Results</button>
+  </div>
+
+  <div id="loading" style="padding: 48px 0; text-align: center;">
+    <div class="spinner" style="margin: 0 auto;"></div>
+  </div>
+
+  <div id="tab-live-list" class="hidden"></div>
+  <div id="tab-results-list" class="hidden"></div>
+
+  <div id="cfg-error" class="hidden empty-state">
+    <p style="font-size: 28px; margin-bottom: 12px;">⚙️</p>
+    <p style="font-size: 15px; color: var(--text-dim);">Not configured yet.</p>
+    <p style="font-size: 13px; margin-top: 8px;"></p>
+  </div>
+
+  <div class="pb-24"></div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  const { createClient } = supabase;
+
+  let db;
+  try {
+    if (SUPABASE_URL.includes('YOUR_PROJECT')) throw new Error('not configured');
+    db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('cfg-error').classList.remove('hidden');
+  }
+
+  // ─── Country flag lookup ──────────────────────────────
+
+  const FLAGS = {
+    'Albania': '🇦🇱', 'Algeria': '🇩🇿', 'Argentina': '🇦🇷', 'Armenia': '🇦🇲',
+    'Australia': '🇦🇺', 'Austria': '🇦🇹', 'Azerbaijan': '🇦🇿', 'Bahrain': '🇧🇭',
+    'Belgium': '🇧🇪', 'Bolivia': '🇧🇴', 'Bosnia and Herzegovina': '🇧🇦', 'Brazil': '🇧🇷',
+    'Cameroon': '🇨🇲', 'Canada': '🇨🇦', 'Chile': '🇨🇱', 'China PR': '🇨🇳', 'China': '🇨🇳',
+    'Colombia': '🇨🇴', 'Costa Rica': '🇨🇷', 'Croatia': '🇭🇷', "Côte d'Ivoire": '🇨🇮',
+    'Ivory Coast': '🇨🇮', 'Czech Republic': '🇨🇿', 'DR Congo': '🇨🇩', 'Denmark': '🇩🇰',
+    'Ecuador': '🇪🇨', 'Egypt': '🇪🇬', 'El Salvador': '🇸🇻', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    'Finland': '🇫🇮', 'France': '🇫🇷', 'Georgia': '🇬🇪', 'Germany': '🇩🇪',
+    'Ghana': '🇬🇭', 'Greece': '🇬🇷', 'Guatemala': '🇬🇹', 'Honduras': '🇭🇳',
+    'Hungary': '🇭🇺', 'India': '🇮🇳', 'Indonesia': '🇮🇩', 'Iran': '🇮🇷',
+    'Iraq': '🇮🇶', 'Israel': '🇮🇱', 'Italy': '🇮🇹', 'Jamaica': '🇯🇲',
+    'Japan': '🇯🇵', 'Jordan': '🇯🇴', 'Kazakhstan': '🇰🇿', 'Kosovo': '🇽🇰',
+    'Mali': '🇲🇱', 'Mexico': '🇲🇽', 'Moldova': '🇲🇩', 'Montenegro': '🇲🇪',
+    'Morocco': '🇲🇦', 'Netherlands': '🇳🇱', 'New Zealand': '🇳🇿', 'Nigeria': '🇳🇬',
+    'North Macedonia': '🇲🇰', 'Norway': '🇳🇴', 'Panama': '🇵🇦', 'Paraguay': '🇵🇾',
+    'Peru': '🇵🇪', 'Philippines': '🇵🇭', 'Poland': '🇵🇱', 'Portugal': '🇵🇹',
+    'Qatar': '🇶🇦', 'Romania': '🇷🇴', 'Saudi Arabia': '🇸🇦', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+    'Senegal': '🇸🇳', 'Serbia': '🇷🇸', 'Slovakia': '🇸🇰', 'Slovenia': '🇸🇮',
+    'South Korea': '🇰🇷', 'Spain': '🇪🇸', 'Sweden': '🇸🇪', 'Switzerland': '🇨🇭',
+    'Thailand': '🇹🇭', 'Trinidad and Tobago': '🇹🇹', 'Tunisia': '🇹🇳', 'Turkey': '🇹🇷',
+    'Ukraine': '🇺🇦', 'United States': '🇺🇸', 'USA': '🇺🇸', 'Uruguay': '🇺🇾',
+    'Uzbekistan': '🇺🇿', 'Venezuela': '🇻🇪', 'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Zambia': '🇿🇲',
+  };
+
+  const flag = name => FLAGS[name] || '🏳️';
+
+  // ─── ESPN sync ───────────────────────────────────────
+
+  function espnStatus(ev) {
+    const state  = ev.status?.type?.state;
+    const detail = (ev.status?.type?.detail || '').toLowerCase();
+    if (state === 'post') return 'finished';
+    if (state === 'pre')  return 'upcoming';
+    if (state === 'in')   return detail.includes('half') ? 'halftime' : 'live';
+    return 'upcoming';
+  }
+
+  function espnMinute(ev) {
+    const clock = ev.status?.displayClock || '0:00';
+    return parseInt(clock.split(':')[0]) || 0;
+  }
+
+  async function syncFromESPN() {
+    const today = new Date();
+    const fmt   = d => d.toISOString().slice(0, 10).replace(/-/g, '');
+    const from  = new Date(today); from.setDate(today.getDate() - 2);
+    const to    = new Date(today); to.setDate(today.getDate() + 3);
+
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fmt(from)}-${fmt(to)}&limit=50`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`ESPN ${resp.status}`);
+    const json = await resp.json();
+
+    const events = json.events || [];
+    if (events.length === 0) return false;
+
+    const rows = events.map(ev => {
+      const comp   = ev.competitions?.[0];
+      const home   = comp?.competitors?.find(c => c.homeAway === 'home');
+      const away   = comp?.competitors?.find(c => c.homeAway === 'away');
+      const stage  = comp?.notes?.[0]?.headline || 'FIFA World Cup 2026';
+      const status = espnStatus(ev);
+
+      return {
+        external_id: String(ev.id),
+        home_team:   home?.team?.displayName || '?',
+        away_team:   away?.team?.displayName || '?',
+        home_flag:   flag(home?.team?.displayName),
+        away_flag:   flag(away?.team?.displayName),
+        status,
+        kickoff_at:  ev.date,
+        home_score:  parseInt(home?.score || 0),
+        away_score:  parseInt(away?.score || 0),
+        stage,
+        minute:      espnMinute(ev),
+      };
+    });
+
+    const { error } = await db.from('matches')
+      .upsert(rows, { onConflict: 'external_id' });
+
+    if (error) { console.warn('upsert error:', error); return false; }
+    return true;
+  }
+
+  // ─── Render ──────────────────────────────────────────
+
+  function badgeHTML(status, minute) {
+    if (status === 'live')     return `<span class="badge live">Live ${minute ? minute + "'" : ''}</span>`;
+    if (status === 'halftime') return `<span class="badge halftime">Half-time</span>`;
+    if (status === 'finished') return `<span class="badge finished">Full Time</span>`;
+    return `<span class="badge upcoming">Upcoming</span>`;
+  }
+
+  function kickoffLabel(kickoffAt) {
+    const diff = new Date(kickoffAt) - Date.now();
+    if (diff <= 0) return 'Starting soon';
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `Kickoff in ${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return `Kickoff in ${hrs}h${rem > 0 ? ' ' + rem + 'm' : ''}`;
+  }
+
+  function renderMatch(m) {
+    const isLive = m.status === 'live' || m.status === 'halftime';
+
+    const scoreBlock = (isLive || m.status === 'finished')
+      ? `<div class="score-block">
+           <div class="score">${m.home_score}<span class="sep">–</span>${m.away_score}</div>
+           ${isLive ? `<div class="score-time">${m.minute}'</div>` : ''}
+         </div>`
+      : `<div class="score-block">
+           <div class="score-vs">vs</div>
+           <div class="score-time">${kickoffLabel(m.kickoff_at)}</div>
+         </div>`;
+
+    const ctaLabel = m.status === 'finished'  ? 'Discuss the result →'
+                   : m.status === 'live'       ? 'Talk to a fan →'
+                   : m.status === 'halftime'   ? 'Half-time chat →'
+                   : 'Join queue early →';
+
+    return `
+      <div class="match-card ${isLive ? 'live-card' : ''}" onclick="joinMatch('${m.id}')">
+        <div class="match-top">
+          <span class="match-stage">${m.stage}</span>
+          ${badgeHTML(m.status, m.minute)}
+        </div>
+        <div class="teams">
+          <div class="team home">
+            <span class="team-flag">${m.home_flag}</span>
+            <span class="team-name">${m.home_team}</span>
+          </div>
+          ${scoreBlock}
+          <div class="team away">
+            <span class="team-flag">${m.away_flag}</span>
+            <span class="team-name">${m.away_team}</span>
+          </div>
+        </div>
+        <div class="match-bottom">
+          <span class="fan-note" id="count-${m.id}"></span>
+          <button class="btn btn-primary btn-sm">${ctaLabel}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function joinMatch(matchId) {
+    sessionStorage.setItem('fp_match_id', matchId);
+    sessionStorage.removeItem('fp_room_id');
+    window.location.href = 'waiting.html';
+  }
+
+  async function loadFanCounts(matches) {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    for (const m of matches) {
+      const el = document.getElementById(`count-${m.id}`);
+      if (!el) continue;
+      try {
+        const { count } = await db.from('queue')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_id', m.id)
+          .eq('paired', false)
+          .gte('created_at', fiveMinAgo);
+        el.innerHTML = count > 0
+          ? `<strong>${count}</strong> fan${count === 1 ? '' : 's'} waiting`
+          : 'Be the first';
+      } catch { el.innerHTML = ''; }
+    }
+  }
+
+  // ─── Tabs ────────────────────────────────────────────
+
+  let activeTab = 'live';
+
+  function switchTab(tab) {
+    activeTab = tab;
+    document.getElementById('tab-live').classList.toggle('active', tab === 'live');
+    document.getElementById('tab-results').classList.toggle('active', tab === 'results');
+    document.getElementById('tab-live-list').classList.toggle('hidden', tab !== 'live');
+    document.getElementById('tab-results-list').classList.toggle('hidden', tab !== 'results');
+  }
+
+  // ─── Main ────────────────────────────────────────────
+
+  async function loadMatches() {
+    if (!db) return;
+    try {
+      try {
+        const synced = await syncFromESPN();
+        if (synced) document.getElementById('sync-badge').classList.remove('hidden');
+      } catch (e) {
+        console.warn('ESPN sync skipped:', e.message);
+      }
+
+      const { data, error } = await db
+        .from('matches')
+        .select('*')
+        .order('kickoff_at', { ascending: true });
+
+      document.getElementById('loading').classList.add('hidden');
+      if (error) throw error;
+
+      const cutoff   = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const live     = (data || []).filter(m => m.status === 'live' || m.status === 'halftime')
+                                   .sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
+      const upcoming = (data || []).filter(m => m.status === 'upcoming')
+                                   .sort((a, b) => new Date(a.kickoff_at) - new Date(b.kickoff_at));
+      const results  = (data || []).filter(m => m.status === 'finished' && new Date(m.kickoff_at) >= cutoff)
+                                   .sort((a, b) => new Date(b.kickoff_at) - new Date(a.kickoff_at));
+
+      const liveTab = [...live, ...upcoming];
+
+      document.getElementById('tab-live-list').innerHTML = liveTab.length
+        ? liveTab.map(renderMatch).join('')
+        : '<div class="empty-state" style="padding:40px 0;"><p>No live or upcoming matches right now.</p></div>';
+
+      document.getElementById('tab-results-list').innerHTML = results.length
+        ? results.map(renderMatch).join('')
+        : '<div class="empty-state" style="padding:40px 0;"><p>No results in the last 24 hours.</p></div>';
+
+      switchTab(activeTab);
+      loadFanCounts([...liveTab, ...results]);
+    } catch (e) {
+      console.error('loadMatches error:', e);
+      document.getElementById('loading').classList.add('hidden');
+      const errEl = document.getElementById('cfg-error');
+      errEl.querySelector('p:last-child').textContent = e?.message || String(e);
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  if (db) loadMatches();
+</script>
+
+</body>
+</html>

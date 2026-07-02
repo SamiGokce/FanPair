@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Chat — FanPair</title>
+  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#141414">
+</head>
+<body>
+
+<div class="chat-layout">
+
+  <!-- Header -->
+  <div class="chat-header">
+    <div class="chat-match-info" id="match-info">
+      <div class="chat-match-name">Connecting...</div>
+    </div>
+    <span id="match-badge" class="badge live">Live</span>
+  </div>
+
+  <!-- Timer bar -->
+  <div class="timer-bar-wrap">
+    <div class="timer-track">
+      <div class="timer-fill" id="timer-fill" style="width:100%"></div>
+    </div>
+    <div class="timer-label" id="timer-label">12:00 left</div>
+  </div>
+
+  <!-- Conversation starter chips -->
+  <div class="prompts" id="prompts">
+    <button class="prompt-chip" onclick="usePrompt(this)">Who's your MOTM? ⭐</button>
+    <button class="prompt-chip" onclick="usePrompt(this)">Fair result or robbery?</button>
+    <button class="prompt-chip" onclick="usePrompt(this)">Rate the ref 👨‍⚖️</button>
+    <button class="prompt-chip" onclick="usePrompt(this)">Lineup change?</button>
+    <button class="prompt-chip" onclick="usePrompt(this)">Best moment?</button>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages" id="messages">
+    <div class="msg-system">You've been matched ⚽ Say something!</div>
+  </div>
+
+  <!-- Input -->
+  <div class="chat-input-wrap">
+    <textarea
+      class="chat-input"
+      id="chat-input"
+      placeholder="Say something..."
+      rows="1"
+      maxlength="500"
+    ></textarea>
+    <button class="send-btn" id="send-btn" onclick="sendMessage()" disabled>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+
+</div>
+
+<!-- End / time-up overlay -->
+<div class="end-overlay" id="end-overlay">
+  <div class="end-card">
+
+    <!-- State 1: time's up, ask to extend -->
+    <div id="end-ask">
+      <div class="end-emoji">⏱️</div>
+      <h2>Time's up!</h2>
+      <p>Keep talking with this fan?</p>
+      <div class="end-actions">
+        <button class="btn btn-primary btn-lg" onclick="voteExtend()">Keep talking (+22 min) 🔥</button>
+        <button class="btn btn-secondary btn-lg" onclick="findNewFan()">New fan →</button>
+        <button class="btn btn-ghost" onclick="window.location.href='index.html'" style="font-size:13px;padding:8px;">Back to matches</button>
+      </div>
+    </div>
+
+    <!-- State 2: waiting for the other fan to agree -->
+    <div id="end-waiting" class="hidden">
+      <div class="end-emoji">👀</div>
+      <h2>Waiting...</h2>
+      <p id="end-wait-label">Waiting for the other fan to agree</p>
+      <div class="end-actions" style="margin-top:8px;">
+        <button class="btn btn-ghost" onclick="findNewFan()" style="font-size:13px;">Actually, find me someone else</button>
+      </div>
+    </div>
+
+    <!-- State 3: extended! auto-dismissed -->
+    <div id="end-extended" class="hidden">
+      <div class="end-emoji">🔥</div>
+      <h2>Both in!</h2>
+      <p>22 more minutes — keep it going.</p>
+    </div>
+
+    <!-- State 4: other fan left -->
+    <div id="end-left" class="hidden">
+      <div class="end-emoji">👋</div>
+      <h2>They're gone.</h2>
+      <p>The other fan didn't want to continue.</p>
+      <div class="end-actions">
+        <button class="btn btn-primary btn-lg" onclick="findNewFan()">New fan →</button>
+        <button class="btn btn-secondary btn-lg" onclick="window.location.href='index.html'">Back to matches</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const sessionId = sessionStorage.getItem('fp_session_id');
+  const roomId    = sessionStorage.getItem('fp_room_id');
+
+  if (!sessionId || !roomId) {
+    window.location.href = 'index.html';
+  }
+
+  // ─── State ───────────────────────────────────────────
+
+  let room           = null;
+  let timerHandle    = null;
+  let channel        = null;
+  let roomChannel    = null;
+  let chatEnded      = false;
+  let twoMinWarned   = false;
+  let extendDeadline = null; // tracks extended expires_at
+
+  // ─── DOM refs ────────────────────────────────────────
+
+  const inputEl    = document.getElementById('chat-input');
+  const sendBtn    = document.getElementById('send-btn');
+  const messagesEl = document.getElementById('messages');
+  const timerFill  = document.getElementById('timer-fill');
+  const timerLabel = document.getElementById('timer-label');
+  const endOverlay = document.getElementById('end-overlay');
+
+  // ─── Textarea auto-resize ─────────────────────────────
+
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    sendBtn.disabled = inputEl.value.trim().length === 0 || chatEnded;
+  });
+
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // ─── Prompts ─────────────────────────────────────────
+
+  function usePrompt(el) {
+    inputEl.value = el.textContent.trim();
+    inputEl.style.height = 'auto';
+    inputEl.focus();
+    sendBtn.disabled = false;
+  }
+
+  // ─── Rendering ──────────────────────────────────────
+
+  function escapeHTML(str) {
+    return str
+      .replace(/&/g,  '&amp;')
+      .replace(/</g,  '&lt;')
+      .replace(/>/g,  '&gt;')
+      .replace(/"/g,  '&quot;')
+      .replace(/\n/g, '<br>');
+  }
+
+  function addMessage(msg) {
+    const mine = msg.session_id === sessionId;
+    const t    = new Date(msg.created_at);
+    const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const el = document.createElement('div');
+    el.className = `message ${mine ? 'mine' : 'theirs'}`;
+    el.innerHTML = `
+      <div class="bubble">${escapeHTML(msg.content)}</div>
+      <div class="msg-time">${time}</div>
+    `;
+    messagesEl.appendChild(el);
+    scrollToBottom();
+  }
+
+  function addSystemMsg(text) {
+    const el = document.createElement('div');
+    el.className = 'msg-system';
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // ─── Send ────────────────────────────────────────────
+
+  async function sendMessage() {
+    if (chatEnded) return;
+    const content = inputEl.value.trim();
+    if (!content) return;
+
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    const { error } = await db.from('messages').insert({
+      room_id:    roomId,
+      session_id: sessionId,
+      content,
+    });
+
+    if (error) {
+      console.error('Send failed:', error);
+      addSystemMsg('Message failed to send. Try again.');
+    }
+  }
+
+  // ─── Timer ──────────────────────────────────────────
+
+  function startTimer(createdAt, expiresAt) {
+    clearInterval(timerHandle);
+    const totalMs = new Date(expiresAt) - new Date(createdAt);
+    twoMinWarned = false;
+
+    function tick() {
+      // Use live extended expiry if it changed
+      const deadline = extendDeadline || expiresAt;
+      const remaining = new Date(deadline) - Date.now();
+
+      if (remaining <= 0) {
+        timerFill.style.width = '0%';
+        timerLabel.textContent = 'Offer extended';
+        clearInterval(timerHandle);
+        showEndAsk();
+        return;
+      }
+
+      const elapsed = new Date(deadline) - new Date(expiresAt) + (new Date(expiresAt) - new Date(createdAt));
+      const effectiveTotal = extendDeadline
+        ? new Date(extendDeadline) - new Date(createdAt)
+        : totalMs;
+      const pct  = (remaining / effectiveTotal) * 100;
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+
+      timerFill.style.width = pct + '%';
+      timerLabel.textContent = `${mins}:${secs.toString().padStart(2, '0')} left`;
+
+      if (pct < 12)      timerFill.className = 'timer-fill danger';
+      else if (pct < 30) timerFill.className = 'timer-fill warn';
+      else               timerFill.className = 'timer-fill';
+
+      if (!twoMinWarned && remaining <= 2 * 60 * 1000) {
+        twoMinWarned = true;
+        addSystemMsg('⏰ 2 minutes left');
+      }
+    }
+
+    tick();
+    timerHandle = setInterval(tick, 1000);
+  }
+
+  // ─── End screen states ───────────────────────────────
+
+  function showEndAsk() {
+    chatEnded = true;
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+    endOverlay.classList.add('show');
+    showEndState('end-ask');
+    // Subscribe to room changes so we know if the other fan votes
+    subscribeRoomExtend();
+  }
+
+  function showEndState(id) {
+    ['end-ask', 'end-waiting', 'end-extended', 'end-left'].forEach(s => {
+      document.getElementById(s).classList.toggle('hidden', s !== id);
+    });
+  }
+
+  async function voteExtend() {
+    showEndState('end-waiting');
+
+    // Record our vote (session_a or session_b)
+    const col = sessionId === room.session_a ? 'extend_vote_a' : 'extend_vote_b';
+    await db.from('rooms').update({ [col]: true }).eq('id', roomId);
+  }
+
+  function subscribeRoomExtend() {
+    roomChannel = db.channel(`room-extend-${roomId}`)
+      .on('postgres_changes', {
+        event:  'UPDATE',
+        schema: 'public',
+        table:  'rooms',
+        filter: `id=eq.${roomId}`,
+      }, payload => {
+        const r = payload.new;
+        if (r.extend_vote_a && r.extend_vote_b) {
+          handleExtended(r.expires_at);
+        } else if (r.extend_vote_a || r.extend_vote_b) {
+          // One fan voted — if that's not us, show them they're waiting
+          const myCol  = sessionId === room.session_a ? 'extend_vote_a' : 'extend_vote_b';
+          const myVote = r[myCol];
+          if (!myVote) {
+            // We haven't voted but other fan has — hint in sub-label
+            document.getElementById('end-wait-label').textContent =
+              'The other fan wants to continue. Do you?';
+          }
+        }
+      })
+      .subscribe();
+
+    // Also check current state immediately (race: both may have voted already)
+    db.from('rooms').select('extend_vote_a,extend_vote_b,expires_at').eq('id', roomId).single()
+      .then(({ data }) => {
+        if (!data) return;
+        if (data.extend_vote_a && data.extend_vote_b) handleExtended(data.expires_at);
+      });
+  }
+
+  async function handleExtended(newExpiry) {
+    // Extend expires_at in DB only once (from the session_a side to avoid double-write)
+    if (sessionId === room.session_a) {
+      const extended = new Date(Date.now() + 22.5 * 60 * 1000).toISOString();
+      const { data } = await db.from('rooms')
+        .update({ expires_at: extended })
+        .eq('id', roomId)
+        .select('expires_at')
+        .single();
+      newExpiry = data?.expires_at || extended;
+    }
+
+    extendDeadline = newExpiry;
+    showEndState('end-extended');
+
+    // Auto-dismiss overlay and resume after 2.5s
+    setTimeout(() => {
+      endOverlay.classList.remove('show');
+      chatEnded = false;
+      inputEl.disabled = false;
+      sendBtn.disabled = inputEl.value.trim().length === 0;
+      twoMinWarned = false;
+      addSystemMsg('🔥 Extended! 22 more minutes.');
+      startTimer(room.created_at, newExpiry);
+      if (roomChannel) db.removeChannel(roomChannel);
+    }, 2500);
+  }
+
+  function findNewFan() {
+    window.location.href = 'waiting.html';
+  }
+
+  // ─── Load room + history ─────────────────────────────
+
+  async function init() {
+    const { data: r, error: roomErr } = await db
+      .from('rooms')
+      .select('*, matches(*)')
+      .eq('id', roomId)
+      .single();
+
+    if (roomErr || !r) {
+      window.location.href = 'index.html';
+      return;
+    }
+
+    room = r;
+    const m = r.matches;
+
+    // Header
+    const isLive     = m.status === 'live' || m.status === 'halftime';
+    const isFinished = m.status === 'finished';
+    document.getElementById('match-info').innerHTML = `
+      <div class="chat-match-name">${m.home_flag} ${m.home_team} vs ${m.away_team} ${m.away_flag}</div>
+      <div class="chat-match-sub">${m.stage}${isLive ? ` · ${m.minute}'` : ''}</div>
+    `;
+
+    const badge = document.getElementById('match-badge');
+    if (isLive) {
+      badge.className   = 'badge live';
+      badge.textContent = 'Live';
+    } else if (isFinished) {
+      badge.className   = 'badge finished';
+      badge.textContent = `${m.home_score}–${m.away_score} FT`;
+    } else {
+      badge.className   = 'badge upcoming';
+      badge.textContent = 'Upcoming';
+    }
+
+    // Check if chat already expired
+    if (new Date(r.expires_at) <= Date.now()) {
+      timerFill.style.width = '0%';
+      timerLabel.textContent = 'Offer extended';
+      showEndAsk();
+      return;
+    }
+
+    // Write our name into the room, show theirs in the header
+    const myName   = localStorage.getItem('fp_display_name') || 'Fan';
+    const myCol    = sessionId === r.session_a ? 'name_a' : 'name_b';
+    const theirCol = sessionId === r.session_a ? 'name_b' : 'name_a';
+    db.from('rooms').update({ [myCol]: myName }).eq('id', roomId);
+
+    function showTheirName(name) {
+      if (!name) return;
+      const sub = document.getElementById('chat-match-sub');
+      if (sub && !sub.textContent.includes('with ')) {
+        sub.textContent += ` · with ${name}`;
+      }
+    }
+
+    showTheirName(r[theirCol]);
+
+    if (!r[theirCol]) {
+      const nameSub = db.channel(`room-name-${roomId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}`
+        }, p => { showTheirName(p.new[theirCol]); db.removeChannel(nameSub); })
+        .subscribe();
+    }
+
+    // Start countdown
+    startTimer(r.created_at, r.expires_at);
+
+    // Load history
+    const { data: history } = await db
+      .from('messages')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true });
+
+    if (history && history.length > 0) {
+      history.forEach(addMessage);
+    }
+
+    // Enable input
+    sendBtn.disabled = false;
+    inputEl.focus();
+
+    // Subscribe to new messages via realtime
+    channel = db.channel(`room-${roomId}`)
+      .on('postgres_changes', {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'messages',
+        filter: `room_id=eq.${roomId}`,
+      }, payload => {
+        // Deduplicate: skip messages we already rendered from history
+        const existing = messagesEl.querySelector(`[data-id="${payload.new.id}"]`);
+        if (existing) return;
+        addMessage(payload.new);
+      })
+      .subscribe();
+  }
+
+  init();
+</script>
+
+</body>
+</html>

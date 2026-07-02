@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Finding a fan... — FanPair</title>
+  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#0a0a0a">
+</head>
+<body>
+
+<div class="page">
+  <header class="header">
+    <button class="btn btn-ghost btn-sm" onclick="leaveQueue()" style="padding-left: 0;">← Back</button>
+    <span class="logo" style="margin-left: auto;">⚽ Fan<span class="accent">Pair</span></span>
+  </header>
+
+  <!-- Compact match banner -->
+  <div id="match-banner" class="match-card hidden" style="margin-top: 4px; cursor: default;"></div>
+
+  <!-- Waiting center -->
+  <div class="waiting-center">
+    <div class="pulse-wrap">
+      <div class="pulse-ring"></div>
+      <div class="pulse-ring"></div>
+      <div class="pulse-core">⚽</div>
+    </div>
+
+    <div>
+      <div class="waiting-title" id="waiting-title">Finding you a fan</div>
+      <div class="waiting-sub" id="waiting-sub">Matching with someone watching the same match</div>
+    </div>
+
+    <div>
+      <div class="pref-label">I'm supporting:</div>
+      <div class="pref-group" id="pref-group">
+        <button class="pref-pill active" data-pref="any">Any fan</button>
+        <button class="pref-pill" data-pref="home" id="pref-home">Home</button>
+        <button class="pref-pill" data-pref="away" id="pref-away">Away</button>
+        <button class="pref-pill" data-pref="neutral">Neutral</button>
+      </div>
+    </div>
+
+    <div class="queue-note" id="queue-note">Joining queue...</div>
+
+    <!-- Casual name picker -->
+    <div id="name-static" class="name-row">
+      <span>You're</span>
+      <button class="name-chip" onclick="openNameEdit()">
+        <span id="name-display"></span>
+        <span style="font-size:10px;opacity:0.5;">✏️</span>
+      </button>
+    </div>
+    <div id="name-edit-wrap" class="name-edit-row hidden">
+      <input class="name-input" id="name-input" type="text" placeholder="Nickname..." maxlength="20" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="btn btn-primary btn-sm" onclick="saveName()">Done</button>
+    </div>
+
+    <button class="btn btn-ghost" onclick="leaveQueue()">Leave queue</button>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // ─── Session ─────────────────────────────────────────
+
+  let sessionId = sessionStorage.getItem('fp_session_id');
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    sessionStorage.setItem('fp_session_id', sessionId);
+  }
+
+  const matchId = sessionStorage.getItem('fp_match_id');
+  if (!matchId) { window.location.href = 'index.html'; }
+
+  // ─── State ───────────────────────────────────────────
+
+  let preference = 'any';
+  let inQueue    = false;
+  let joinedAt   = null;
+  let pollTimer  = null;
+  let dotTimer   = null;
+  let dots       = 0;
+
+  // ─── Animated dots on label ──────────────────────────
+
+  function startDots() {
+    const el = document.getElementById('waiting-title');
+    dotTimer = setInterval(() => {
+      dots = (dots + 1) % 4;
+      el.textContent = 'Finding you a fan' + '.'.repeat(dots);
+    }, 500);
+  }
+
+  // ─── Load match info ─────────────────────────────────
+
+  async function loadMatch() {
+    const { data: m } = await db.from('matches').select('*').eq('id', matchId).single();
+    if (!m) return;
+
+    // Set preference pill labels
+    document.getElementById('pref-home').textContent = `${m.home_flag} ${m.home_team}`;
+    document.getElementById('pref-away').textContent = `${m.away_flag} ${m.away_team}`;
+
+    // Banner
+    const isLive = m.status === 'live' || m.status === 'halftime';
+    const scoreStr = (isLive || m.status === 'finished')
+      ? `${m.home_score}–${m.away_score}`
+      : 'vs';
+    const badge = m.status === 'live'     ? '<span class="badge live">Live</span>'
+                : m.status === 'halftime' ? '<span class="badge halftime">HT</span>'
+                : m.status === 'finished' ? '<span class="badge finished">FT</span>'
+                : '<span class="badge upcoming">Upcoming</span>';
+
+    const banner = document.getElementById('match-banner');
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <span style="font-weight:600;font-size:14px;">
+          ${m.home_flag} ${m.home_team} <span style="color:var(--muted)">${scoreStr}</span> ${m.away_team} ${m.away_flag}
+        </span>
+        ${badge}
+      </div>
+    `;
+    banner.classList.remove('hidden');
+  }
+
+  // ─── Queue management ────────────────────────────────
+
+  async function enterQueue() {
+    joinedAt = new Date().toISOString();
+
+    // Clear any stale entry for this session
+    await db.from('queue').delete().eq('session_id', sessionId);
+
+    const { error } = await db.from('queue').insert({
+      session_id: sessionId,
+      match_id:   matchId,
+      preference,
+      paired:     false,
+    });
+
+    if (error) {
+      console.error('Queue join failed:', error);
+      document.getElementById('queue-note').textContent = 'Failed to join queue. Refresh to try again.';
+      return;
+    }
+
+    inQueue = true;
+    startDots();
+    startPolling();
+  }
+
+  async function removeFromQueue() {
+    inQueue = false;
+    clearInterval(pollTimer);
+    clearInterval(dotTimer);
+    await db.from('queue').delete().eq('session_id', sessionId);
+  }
+
+  function leaveQueue() {
+    removeFromQueue().finally(() => {
+      window.location.href = 'index.html';
+    });
+  }
+
+  // ─── Preference change ───────────────────────────────
+
+  document.getElementById('pref-group').addEventListener('click', async e => {
+    const pill = e.target.closest('.pref-pill');
+    if (!pill) return;
+    document.querySelectorAll('.pref-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    preference = pill.dataset.pref;
+    if (inQueue) {
+      await removeFromQueue();
+      await enterQueue();
+    }
+  });
+
+  // ─── Polling loop ────────────────────────────────────
+
+  function startPolling() {
+    clearInterval(pollTimer);
+    poll();
+    pollTimer = setInterval(poll, 2500);
+  }
+
+  async function poll() {
+    if (!inQueue) return;
+
+    // 1. Have we already been paired? (another client called pair_users on us)
+    const { data: existingRoom } = await db.from('rooms')
+      .select('id')
+      .or(`session_a.eq.${sessionId},session_b.eq.${sessionId}`)
+      .gte('created_at', joinedAt)
+      .maybeSingle();
+
+    if (existingRoom) {
+      go(existingRoom.id);
+      return;
+    }
+
+    // 2. Look for another unpaired user in the same queue (joined in last 10 min)
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+    const { data: others } = await db.from('queue')
+      .select('session_id')
+      .eq('match_id', matchId)
+      .eq('paired', false)
+      .neq('session_id', sessionId)
+      .gte('created_at', tenMinAgo)
+      .limit(10);
+
+    if (!others || others.length === 0) {
+      document.getElementById('queue-note').textContent = 'Waiting for another fan...';
+      return;
+    }
+
+    document.getElementById('queue-note').textContent =
+      `${others.length + 1} fan${others.length > 0 ? 's' : ''} in queue`;
+
+    // Only the client with the lexicographically LOWER session_id initiates pairing.
+    // This prevents both sides calling pair_users simultaneously.
+    const myTarget = others.find(o => sessionId < o.session_id);
+    if (!myTarget) return; // We're the follower — wait to be paired
+
+    // 3. Attempt atomic pairing
+    const { data: roomId, error } = await db.rpc('pair_users', {
+      my_session:    sessionId,
+      their_session: myTarget.session_id,
+      p_match_id:    matchId,
+    });
+
+    if (roomId && !error) {
+      go(roomId);
+    }
+  }
+
+  function go(roomId) {
+    inQueue = false;
+    clearInterval(pollTimer);
+    clearInterval(dotTimer);
+    sessionStorage.setItem('fp_room_id', roomId);
+    window.location.href = 'chat.html';
+  }
+
+  // ─── Cleanup on tab close ────────────────────────────
+
+  window.addEventListener('pagehide', () => {
+    if (inQueue) {
+      // Sync XHR as a best-effort fallback since fetch/async may not fire on unload
+      const url = `${SUPABASE_URL}/rest/v1/queue?session_id=eq.${sessionId}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('DELETE', url, false);
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON_KEY}`);
+      try { xhr.send(); } catch {}
+    }
+  });
+
+  // ─── Name ────────────────────────────────────────────
+
+  function randomName() {
+    return 'Fan #' + Math.floor(1000 + Math.random() * 9000);
+  }
+
+  function getDisplayName() {
+    let name = localStorage.getItem('fp_display_name');
+    if (!name) {
+      name = randomName();
+      localStorage.setItem('fp_display_name', name);
+    }
+    return name;
+  }
+
+  function openNameEdit() {
+    document.getElementById('name-static').classList.add('hidden');
+    const wrap = document.getElementById('name-edit-wrap');
+    wrap.classList.remove('hidden');
+    const input = document.getElementById('name-input');
+    const current = localStorage.getItem('fp_display_name') || '';
+    input.value = current.startsWith('Fan #') ? '' : current;
+    input.focus();
+  }
+
+  function saveName() {
+    const input = document.getElementById('name-input');
+    const val   = input.value.trim();
+    const name  = val || randomName();
+    localStorage.setItem('fp_display_name', name);
+    document.getElementById('name-display').textContent = name;
+    document.getElementById('name-edit-wrap').classList.add('hidden');
+    document.getElementById('name-static').classList.remove('hidden');
+  }
+
+  document.getElementById('name-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveName();
+    if (e.key === 'Escape') {
+      document.getElementById('name-edit-wrap').classList.add('hidden');
+      document.getElementById('name-static').classList.remove('hidden');
+    }
+  });
+
+  // Init name display
+  document.getElementById('name-display').textContent = getDisplayName();
+
+  // ─── Init ────────────────────────────────────────────
+
+  loadMatch().then(() => enterQueue());
+</script>
+
+</body>
+</html>
