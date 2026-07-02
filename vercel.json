@@ -1,7 +1,5 @@
 {
-  "buildCommand": "node generate-config.js",
-  "outputDirectory": ".",
-  "headers": [
+"headers": [
     {
       "source": "/(.*)",
       "headers": [
